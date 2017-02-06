@@ -9,7 +9,10 @@
 	xmlns:zotero="tag:conaltuohy.com,2015:zotero"
 	xmlns:j="http://marklogic.com/json"
 	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:xlink="http://www.w3.org/1999/xlink"
+	xmlns:ead="urn:isbn:1-931666-22-9"
 	xmlns:html="http://www.w3.org/1999/xhtml">
+	<p:import href="http://xmlcalabash.com/extension/steps/library-1.0.xpl"/>
 	
 	<p:input port="parameters" kind="parameter"/><!-- may contain "key" parameter -->
 	<p:option name="output-file" select="ead.xml"/><!-- e.g. "ead.xml" -->
@@ -19,11 +22,15 @@
 	<!-- https://www.zotero.org/support/dev/web_api/v3/basics#user_and_group_library_urls -->
 
 	<!-- Retrieve the library in Zotero JSON format, converted to MarkLogic JSON-XML -->
+	<!--
 	<zotero:get-library name="zotero">
 		<p:with-option name="library" select="$library"/>
 	</zotero:get-library>
-	
+	-->
+	<p:load name="zotero" href="../../library.xml"/>
+
 	<!-- Transform to EAD -->
+	<cx:message message="Transforming Zotero library to EAD ..."/>
 	<p:xslt>
 		<p:with-param name="country-code" select="$country-code"/>
 		<p:with-param name="identifier" select="$output-file"/>
@@ -34,10 +41,54 @@
 			<p:document href="zotero-library-to-ead.xsl"/>
 		</p:input>
 	</p:xslt>
+	<cx:message message="Transformation complete"/>
 	
+	<!-- Save embedded Zotero notes as html files -->
+	<cx:message message="Moving HTML notes into separate files ..."/>
+	<p:viewport match="ead:dao[starts-with(@xlink:href, 'data:text/html;charset=utf-8,')]" name="dao-with-data-uri">
+		<p:variable name="filename" select="concat('notes/', lower-case(/ead:dao/@entityref), '.html')"/>
+		<!-- decode the URL-encoded HTML -->
+		<p:www-form-urldecode name="content">
+			<p:with-option name="value" select="
+				concat(
+					'content=',
+					substring-after(/ead:dao/@xlink:href, 'data:text/html;charset=utf-8,')
+				)
+			"/>
+		</p:www-form-urldecode>
+		<!-- copy the value of the HTML into an element -->
+		<p:template>
+			<p:input port="parameters"><p:empty/></p:input>
+			<p:input port="template">
+				<p:inline>
+					<content>{string(/c:param-set/c:param[@name='content']/@value)}</content>
+				</p:inline>
+			</p:input>
+		</p:template>
+		<!-- parse the HTML contained in the <content> element and discard the wrapper <content> -->
+		<p:unescape-markup content-type="text/html"/>
+		<p:unwrap match="/content"/>
+		<p:xslt name="repair-html">
+			<p:input port="parameters"><p:empty/></p:input>
+			<p:input port="stylesheet">
+				<p:document href="repair-html.xsl"/>
+			</p:input>
+		</p:xslt>
+		<p:store method="xhtml" doctype-system="html">
+			<p:with-option name="href" select="concat('../../', $filename)"/>
+		</p:store>
+		<p:add-attribute match="/ead:dao" attribute-name="xlink:href">
+			<p:with-option name="attribute-value" select="$filename"/>
+			<p:input port="source">
+				<p:pipe step="dao-with-data-uri" port="current"/>
+			</p:input>
+		</p:add-attribute>
+		<p:delete match="/ead:dao/@entityref"/>
+	</p:viewport>
+
 	<!-- Save EAD -->
 	<p:store>
-		<p:with-option name="href" select="concat('../', $output-file)"/>
+		<p:with-option name="href" select="concat('../../', $output-file)"/>
 	</p:store>
 	
 	<!-- temporary files output for debugging / development purposes -->
@@ -56,8 +107,22 @@
 	</p:xslt>
 	<p:store href="../sample.xml"/>
 	
+	<!-- a sample -->
+	<p:xslt>
+		<p:input port="source">
+			<p:pipe step="zotero" port="result"/>
+		</p:input>
+		<p:input port="parameters">
+			<p:empty/>
+		</p:input>
+		<p:input port="stylesheet">
+			<p:document href="make-sample.xsl"/>
+		</p:input>
+	</p:xslt>
+	<p:store href="../../sample.xml"/>
+
 	<!-- the full library -->
-	<p:store href="../library.xml">
+	<p:store href="../../library.xml">
 		<p:input port="source">
 			<p:pipe step="zotero" port="result"/>
 		</p:input>
@@ -68,12 +133,17 @@
 		<p:input port="parameters" kind="parameter"/>
 		<p:output port="result"/>
 		<p:option name="library" required="true"/><!-- e.g. "groups/83731" -->
+		<cx:message message="Reading Zotero library...">
+			<p:input port="source"><p:empty/></p:input>
+		</cx:message>
+		<cx:message message="Reading collections..."/>
 		<zotero:list>
 			<p:with-option name="href" select="
 				concat('https://api.zotero.org/', $library, '/collections?start=0&amp;limit=100&amp;format=json&amp;v=3')
 			"/>
 		</zotero:list>
 		<p:wrap-sequence wrapper="collections" name="collections"/>
+		<cx:message message="Reading items..."/>
 		<zotero:list >
 			<p:with-option name="href" select="
 				concat('https://api.zotero.org/', $library, '/items?start=0&amp;limit=100&amp;format=json&amp;v=3')
@@ -86,6 +156,7 @@
 				<p:pipe step="items" port="result"/>
 			</p:input>
 		</p:wrap-sequence>
+		<cx:message message="Finished reading Zotero library"/>
 	</p:declare-step>
 	
 	<!-- List the elements of an array of items or collections from the Zotero web API -->
@@ -112,6 +183,9 @@
 			<p:pipe step="subsequent-items" port="result"/>
 		</p:output>
 		<p:option name="href" required="true"/>
+		<cx:message message="Requesting list...">
+			<p:input port="source"><p:empty/></p:input>
+		</cx:message>
 		<!-- make initial request -->
 		<zotero:request name="initial-request">
 			<p:with-option name="href" select="$href"/>

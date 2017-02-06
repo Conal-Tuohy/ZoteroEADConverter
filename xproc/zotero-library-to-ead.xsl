@@ -1,6 +1,7 @@
 <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" 
 	xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xlink="http://www.w3.org/1999/xlink"
-	xmlns:j="http://marklogic.com/json" xmlns="urn:isbn:1-931666-22-9" exclude-result-prefixes="j xs">
+	xmlns:j="http://marklogic.com/json" xmlns:html="http://www.w3.org/1999/xhtml" xmlns="urn:isbn:1-931666-22-9"
+	exclude-result-prefixes="j xs">
 	<xsl:param name="country-code"/>
 	<xsl:param name="identifier"/>
 	
@@ -278,20 +279,30 @@
 				= 281 url without accessDate
 				-->
 			<xsl:for-each select="j:data/j:extra">
-				<note><p><xsl:value-of select="."/></p></note>
+				<note type="zotero-extra"><p><xsl:value-of select="."/></p></note>
 			</xsl:for-each>
-			<!-- note is either a piece of contentor else an ead:note with embedded markup which should be sanitised -->
+			<!-- note is either a piece of content or else an ead:note with embedded markup which should be sanitised -->
 			<xsl:if test="j:data/j:note[normalize-space()]">
 
 				<xsl:choose>
-					<xsl:when test="(string-length(j:data/j:note) &gt; 200)">
+					<xsl:when test="(string-length(j:data/j:note) &gt; 2000)">
 						<!-- treat the note as a digital object -->
+						<xsl:variable name="note-url" select="
+							concat('data:text/html;charset=utf-8,', encode-for-uri(j:data/j:note))
+						"/>
+						<dao xlink:title="Note" xlink:type="simple" xlink:href="{$note-url}" entityref="{j:data/j:key}">
+							<daodesc>
+								<p>(text/html)</p>
+							</daodesc>
+						</dao>
+						<!--
 						<xsl:variable name="note" select="j:links/j:alternate[j:type='text/html']"/>
 						<dao xlink:title="Note" xlink:type="simple" xlink:href="{$note/j:href}">
 							<daodesc>
 								<p>(<xsl:value-of select="$note/j:type"/>)</p>
 							</daodesc>
 						</dao>
+						-->
 					</xsl:when>
 					<xsl:otherwise>
 						<!-- treat the note as metadata -->
@@ -304,7 +315,7 @@
 								)
 							)
 						"/>
-						<note><p><xsl:value-of select="$normalized-note"/></p></note>
+						<note type="zotero-note"><p><xsl:value-of select="$normalized-note"/></p></note>
 					</xsl:otherwise>
 				</xsl:choose>
 			</xsl:if>
@@ -328,6 +339,10 @@
 				<xsl:sort select="j:data/j:note"/>
 			</xsl:apply-templates>
 		</c>
+	</xsl:template>
+	
+	<xsl:template match="html:p" mode="html-to-ead">
+		<p><xsl:apply-templates mode="html-to-ead"/></p>
 	</xsl:template>
 	
 </xsl:stylesheet>
