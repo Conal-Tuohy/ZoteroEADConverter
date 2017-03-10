@@ -13,13 +13,22 @@
 	
 	<p:input port="parameters" kind="parameter"/><!-- contains "key" parameter -->
 
-	<p:load href="../../australian-generations-ead.xml"/>	
+	<p:load name="source-ead" href="../../australian-generations-ead.xml"/>	
 	<p:xslt>
 		<p:input port="stylesheet">
 			<p:document href="ead-to-download-script.xsl"/>
 		</p:input>
 	</p:xslt>
 	<p:store href="../../download-dao.sh" method="text"/>
+	<p:xslt>
+		<p:input port="source">
+			<p:pipe step="source-ead" port="result"/>
+		</p:input>
+		<p:input port="stylesheet">
+			<p:document href="replace-dao-url-with-local-filename.xsl"/>
+		</p:input>
+	</p:xslt>
+	<p:store href="../../australian-generations-ead-with-local-filenames.xml"/>	
 		
 </p:declare-step>
 	
